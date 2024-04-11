@@ -21,7 +21,7 @@ class Movie(db.Model):
     launching = db.Column(db.Date, nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'))
     ticket_price = db.Column(db.Integer, nullable=False)
-    schedules = db.relationship('Schedule', backref='info_movie', lazy='dynamic')
+    schedules = db.relationship('Schedule', back_populates='movie')
 
     def active_movie(self):
         difference = datetime.now().date() - self.launching
@@ -34,14 +34,14 @@ class Movie(db.Model):
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
-    movies = db.relationship('Movie', backref='info_category', lazy='dynamic')
+    movies = db.relationship('Movie', backref='schedule', lazy='dynamic')
 
 class Schedule(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'))
     time = db.Column(db.Time, nullable=False) 
+    movie = db.relationship('Movie', back_populates='schedules')
     transactions = db.relationship('Transaction', backref='info_schedule', lazy='dynamic')
-
 class Topup(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -233,25 +233,30 @@ def update_schedule():
 @app.route('/list/', methods=['GET'])
 @User.admin_or_user_required
 def list_movie(current_user):
-    start_date_str = request.form.get('start_date')
-    if not start_date_str:
-        return jsonify({'error': 'start_date parameter is required'}), 400
+    play_date_str = request.form.get('play_date')
+    if not play_date_str:
+        return jsonify({'error': 'play_date parameter is required'}), 400
     try:
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() 
+        play_date = datetime.strptime(play_date_str, '%Y-%m-%d').date() 
     except ValueError:
         return jsonify({'error': 'Invalid date format'}), 400
-    
-    max_launching_date = start_date - timedelta(days=7)
+
+    max_launching_date = play_date - timedelta(days=7)
     active_movies = Movie.query.filter(Movie.launching >= max_launching_date).all()
+
     movie_info = [
         {
             'id': movie.id,
             'name': movie.name,
-            'launching': movie.launching.strftime('%Y-%m-%d'),
             'category_id': movie.category_id,
-            'ticket_price': movie.ticket_price        } for movie in active_movies
+            'ticket_price': movie.ticket_price,
+            'schedules': [schedule.time.strftime('%H:%M') for schedule in movie.schedules]  # Mengambil waktu dari setiap jadwal
+        }
+        for movie in active_movies
     ]
+
     return jsonify(movie_info), 200
+
 
 @app.route('/search/', methods=['GET'])
 @User.admin_or_user_required
