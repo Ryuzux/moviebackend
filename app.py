@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from functools import wraps
 from flask_httpauth import HTTPBasicAuth
-from datetime import date
+from datetime import datetime, timedelta
 
 
 app = Flask(__name__)
@@ -23,6 +23,14 @@ class Movie(db.Model):
     ticket_price = db.Column(db.Integer, nullable=False)
     schedules = db.relationship('Schedule', backref='info_movie', lazy='dynamic')
 
+    def active_movie(self):
+        difference = datetime.now().date() - self.launching
+        remaining_days = 7 - difference.days
+        if remaining_days >= 0:
+            return remaining_days
+        else:
+            return 0
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
@@ -31,15 +39,21 @@ class Category(db.Model):
 class Schedule(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'))
-    time = db.Column(db.Time, nullable=False)
+    time = db.Column(db.Time, nullable=False) 
     transactions = db.relationship('Transaction', backref='info_schedule', lazy='dynamic')
 
+class Topup(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    amount = db.Column(db.Integer, default=0)
+    is_confirmed = db.Column(db.Boolean, default=False)
+    
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedule.id'), nullable=False)
-
+    
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, index=True, nullable=False)
     username = db.Column(db.String(20), unique=True, nullable=False)
@@ -48,7 +62,6 @@ class User(db.Model):
     role = db.Column(db.String(20), default='user')
     transactions = db.relationship('Transaction', backref='info_user', lazy='dynamic')
 
- 
     def admin_required(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -163,6 +176,160 @@ def update_movie():
         movie.ticket_price = data['ticket_price']
     db.session.commit() 
     return jsonify({'message': 'Movie updated successfully'}), 200
+
+@app.route('/add/schedule/', methods=['POST'])
+@User.admin_required
+def add_schedule():
+    data = request.get_json()
+
+    if 'movie_id' not in data or 'time' not in data:
+        return jsonify({'error': 'movie_id and time must be provided'}), 400
+
+    existing_schedule = Schedule.query.filter_by(movie_id=data['movie_id'], time=data['time']).first()
+    if existing_schedule:
+        return jsonify({'error': 'The schedule already exists'}), 409
+
+    new_schedule = Schedule(
+        movie_id=data['movie_id'],
+        time=data['time']
+    )
+
+    db.session.add(new_schedule)
+    db.session.commit()
+
+    return jsonify({
+        'id': new_schedule.id,
+        'movie_id': new_schedule.movie_id,
+        'name': new_schedule.info_movie.name,
+        'ticket_price': new_schedule.info_movie.ticket_price,
+        'time': new_schedule.time.strftime('%H:%M'),
+        'remaining_days': f'{new_schedule.info_movie.active_movie()} days' 
+    }), 201
+
+@app.route('/update/schedule/', methods=['PUT'])
+@User.admin_required
+def update_schedule():
+    data = request.get_json()
+    update_id = data.get('id')
+    if not update_id:
+        return jsonify({
+            'error': 'id is required in the request'
+        })
+    sch = Schedule.query.get(update_id)
+    if not sch:
+        return jsonify({'error': 'Schedule not found'}), 404
+    if 'id' in data:
+        sch.movie_id = data['id']
+    if 'time' in data:
+        sch.time = data['time']
+    db.session.commit()
+    return jsonify({
+        'id': sch.id,
+        'movie_id': sch.movie_id,
+        'name': sch.info_movie.name,
+        'time': sch.time.strftime('%H:%M'),
+        'remaining_days': f'{sch.info_movie.active_movie()} days' 
+    }), 200
+
+@app.route('/list/', methods=['GET'])
+@User.admin_or_user_required
+def list_movie(current_user):
+    start_date_str = request.form.get('start_date')
+    if not start_date_str:
+        return jsonify({'error': 'start_date parameter is required'}), 400
+    try:
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() 
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
+    
+    max_launching_date = start_date - timedelta(days=7)
+    active_movies = Movie.query.filter(Movie.launching >= max_launching_date).all()
+    movie_info = [
+        {
+            'id': movie.id,
+            'name': movie.name,
+            'launching': movie.launching.strftime('%Y-%m-%d'),
+            'category_id': movie.category_id,
+            'ticket_price': movie.ticket_price        } for movie in active_movies
+    ]
+    return jsonify(movie_info), 200
+
+@app.route('/search/', methods=['GET'])
+@User.admin_or_user_required
+def search_movie(current_user):
+    query = request.args.get('query')
+    if not query:
+        return jsonify({'error': 'Query parameter is required'}), 400
+    name_results = Movie.query.filter(Movie.name.ilike(f"%{query}%")).all()
+    category_results = Movie.query.join(Category).filter(Category.name.ilike(f"%{query}%")).all()
+    search_results = name_results + category_results
+    movie_info = [
+        {
+            'id': movie.id,
+            'name': movie.name,
+            'launching': movie.launching.strftime('%Y-%m-%d'),
+            'category': movie.info_category.name,
+            'ticket_price': movie.ticket_price,
+            'remaining_days': f'{movie.active_movie()} days'
+        }
+        for movie in search_results
+    ]
+    return jsonify(movie_info), 200
+
+@app.route('/topup/', methods=['POST'])
+@User.admin_or_user_required
+def topup(current_user):
+    data = request.get_json()
+    if 'amount' not in data:
+        return jsonify({'error': 'amount must be provided'}), 400
+
+    try:
+        amount = int(data['amount'])
+    except ValueError:
+        return jsonify({'error': 'Amount must be an integer'}), 400
+
+    user = User.query.filter_by(username=current_user.username).first()
+    if not user:
+        return jsonify({'error': 'User not found or does not match'}), 404
+
+    new_topup = Topup(
+        user_id=user.id,
+        amount=amount,
+        is_confirmed=False
+    )
+    db.session.add(new_topup)
+    db.session.commit()
+
+    return jsonify({'message': 'Top-up request submitted successfully'}), 200
+
+@app.route('/confirm/topup/', methods=['PUT'])
+@User.admin_required
+def confirm_topup():
+    topup_id = request.get_json('id')
+    if not topup_id:
+        return jsonify({'error': 'Top-up request ID not provided'}), 400
+
+    topup = Topup.query.get(topup_id)
+    if not topup:
+        return jsonify({'error': 'Top-up request not found'}), 404
+
+    if not topup.is_confirmed:
+        topup.is_confirmed = True
+        db.session.commit()
+
+        user = User.query.get(topup.user_id)
+        user.balance += topup.amount
+        db.session.commit()
+
+        return jsonify({'message': 'Top-up request confirmed successfully'}), 200
+    else:
+        return jsonify({'error': 'Top-up request has already been confirmed'}), 400
+
+    
+
+
+
+
 
 
 
