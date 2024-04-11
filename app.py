@@ -50,7 +50,6 @@ class Topup(db.Model):
     
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedule.id'), nullable=False)
     
@@ -325,8 +324,27 @@ def confirm_topup():
     else:
         return jsonify({'error': 'Top-up request has already been confirmed'}), 400
 
-    
+@app.route('/buy/ticket', methods=['POST'])
+@User.admin_or_user_required
+def buy(current_user):
+    data = request.get_json()
+    schedule = Schedule.query.get(data['schedule_id'])
+    if not schedule:
+        return jsonify({'error': 'Schedule not found'}), 404
+    ticket_price = schedule.info_movie.ticket_price
+    if current_user.balance < ticket_price:
+        return jsonify({'error': 'Insufficient balance'}), 400
 
+    current_user.balance -= ticket_price
+    new_transaction = Transaction(
+        user_id=current_user.id,
+        schedule_id=data['schedule_id']
+    )
+
+    db.session.add(new_transaction)
+    db.session.commit()
+
+    return jsonify({'message': 'Ticket purchased successfully'}), 200
 
 
 
