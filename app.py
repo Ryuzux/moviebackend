@@ -34,7 +34,8 @@ class Movie(db.Model):
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
-    movies = db.relationship('Movie', backref='schedule', lazy='dynamic')
+    movies = db.relationship('Movie', backref='info_category', lazy='dynamic')
+    
 
 class Schedule(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -42,6 +43,7 @@ class Schedule(db.Model):
     time = db.Column(db.Time, nullable=False) 
     movie = db.relationship('Movie', back_populates='schedules')
     transactions = db.relationship('Transaction', backref='info_schedule', lazy='dynamic')
+
 class Topup(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -248,8 +250,8 @@ def list_movie(current_user):
         {
             'id': movie.id,
             'name': movie.name,
-            'category_id': movie.category_id,
-            'ticket_price': movie.ticket_price,
+            'category': movie.info_category.name,
+            'ticket_price': f'Rp {movie.ticket_price}',
             'schedules': [schedule.time.strftime('%H:%M') for schedule in movie.schedules]  # Mengambil waktu dari setiap jadwal
         }
         for movie in active_movies
@@ -273,7 +275,6 @@ def search_movie(current_user):
             'name': movie.name,
             'launching': movie.launching.strftime('%Y-%m-%d'),
             'category': movie.info_category.name,
-            'ticket_price': movie.ticket_price,
             'remaining_days': f'{movie.active_movie()} days'
         }
         for movie in search_results
@@ -336,7 +337,7 @@ def buy(current_user):
     schedule = Schedule.query.get(data['schedule_id'])
     if not schedule:
         return jsonify({'error': 'Schedule not found'}), 404
-    ticket_price = schedule.info_movie.ticket_price
+    ticket_price = schedule.movie.ticket_price
     if current_user.balance < ticket_price:
         return jsonify({'error': 'Insufficient balance'}), 400
 
@@ -352,6 +353,27 @@ def buy(current_user):
     return jsonify({'message': 'Ticket purchased successfully'}), 200
 
 
+@app.route('/topmovie', methods=['GET'])
+@User.admin_or_user_required
+def most_popular_movie(current_user):
+    movies = Movie.query.all()
+    movie_ticket_counts = {}
+    for movie in movies:
+        ticket_count = Transaction.query.join(Schedule).filter(Schedule.movie_id == movie.id).count()
+        movie_ticket_counts[movie.id] = ticket_count
+
+    most_popular_movie_id = max(movie_ticket_counts, key=movie_ticket_counts.get)
+    most_popular_movie = Movie.query.get(most_popular_movie_id)
+
+    result = {
+        'most_popular_movie': {
+            'id': most_popular_movie.id if most_popular_movie else None,
+            'name': most_popular_movie.name if most_popular_movie else None,
+            'ticket_count': movie_ticket_counts.get(most_popular_movie_id, 0)
+        }
+    }
+
+    return jsonify(result), 200
 
 
 
