@@ -201,10 +201,10 @@ def add_schedule():
     return jsonify({
         'id': new_schedule.id,
         'movie_id': new_schedule.movie_id,
-        'name': new_schedule.info_movie.name,
-        'ticket_price': new_schedule.info_movie.ticket_price,
+        'name': new_schedule.movie.name,
+        'ticket_price': new_schedule.movie.ticket_price,
         'time': new_schedule.time.strftime('%H:%M'),
-        'remaining_days': f'{new_schedule.info_movie.active_movie()} days' 
+        'remaining_days': f'{new_schedule.movie.active_movie()} days' 
     }), 201
 
 @app.route('/update/schedule/', methods=['PUT'])
@@ -220,16 +220,16 @@ def update_schedule():
     if not sch:
         return jsonify({'error': 'Schedule not found'}), 404
     if 'id' in data:
-        sch.movie_id = data['id']
+        sch.id = data['id']
     if 'time' in data:
         sch.time = data['time']
     db.session.commit()
     return jsonify({
         'id': sch.id,
         'movie_id': sch.movie_id,
-        'name': sch.info_movie.name,
+        'name': sch.movie.name,
         'time': sch.time.strftime('%H:%M'),
-        'remaining_days': f'{sch.info_movie.active_movie()} days' 
+        'remaining_days': f'{sch.movie.active_movie()} days' 
     }), 200
 
 @app.route('/list/', methods=['GET'])
