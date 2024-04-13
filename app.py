@@ -35,7 +35,12 @@ class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String, nullable=False)
     movies = db.relationship('Movie', backref='info_category', lazy='dynamic')
-    
+
+class Theater(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    room = db.Column(db.Integer, unique=True)
+    total_seat = db.Column(db.Integer)
+    schedules = db.relationship('Schedule', backref='info_theater', lazy='dynamic')
 
 class Schedule(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -43,6 +48,7 @@ class Schedule(db.Model):
     time = db.Column(db.Time, nullable=False) 
     movie = db.relationship('Movie', back_populates='schedules')
     transactions = db.relationship('Transaction', backref='info_schedule', lazy='dynamic')
+    theater_id = db.Column(db.Integer, db.ForeignKey('theater.id'))
 
 class Topup(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -54,7 +60,8 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedule.id'), nullable=False)
-    
+    date = db.Column(db.Date, default=0)
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, index=True, nullable=False)
     username = db.Column(db.String(20), unique=True, nullable=False)
@@ -71,7 +78,9 @@ class User(db.Model):
             if user and user.role == "admin":
                 return fn(*args, **kwargs)
             else:
-                return jsonify({"error": "Unauthorized"}), 401
+                return jsonify({
+                    "error": "Unauthorized"
+                    }), 401
         return wrapper
 
     def admin_or_user_required(fn):
@@ -83,7 +92,9 @@ class User(db.Model):
                 kwargs['current_user'] = current_user
                 if current_user.role == "admin" or current_user.role == "user":
                     return fn(*args, **kwargs)
-            return jsonify({"error": "Unauthorized"}), 401
+            return jsonify({
+                "error": "Unauthorized"
+                }), 401
         return wrapper
 
 
@@ -104,7 +115,9 @@ def add_user():
     new_user = User(username=data['username'], password=data['password'])
     db.session.add(new_user)
     db.session.commit()
-    return jsonify({'message': 'Registered successfully'}), 201
+    return jsonify({
+        'message': 'Registered successfully'
+        }), 201
 
 @app.route('/update/user/', methods=['PUT'])
 @User.admin_or_user_required
@@ -112,13 +125,17 @@ def update_user(current_user):
     data = request.get_json()
     user = User.query.filter_by(username=current_user.username).first()
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({
+            'error': 'User not found'
+            }), 404
     if 'username' in data:
         user.username = data['username']
     if 'password' in data:
         user.password = data['password']
     db.session.commit() 
-    return jsonify({'message': 'User updated successfully'}), 200
+    return jsonify({
+        'message': 'User updated successfully'
+        }), 200
 
 @app.route('/add/movie/', methods=['POST'])
 @User.admin_required
@@ -163,10 +180,14 @@ def update_movie():
     data = request.get_json()
     update_id = data.get('id')
     if not update_id:
-        return jsonify({'error': 'id is required in the request'}), 400
+        return jsonify({
+            'error': 'id is required in the request'
+            }), 400
     movie = Movie.query.get(update_id)
     if not movie:
-        return jsonify({'error': 'Movie not found'}), 404
+        return jsonify({
+            'error': 'Movie not found'
+            }), 404
     if 'name' in data:
         movie.name = data['name']
     if 'launching' in data:
@@ -176,7 +197,9 @@ def update_movie():
     if 'ticket_price' in data:
         movie.ticket_price = data['ticket_price']
     db.session.commit() 
-    return jsonify({'message': 'Movie updated successfully'}), 200
+    return jsonify({
+        'message': 'Movie updated successfully'
+        }), 200
 
 @app.route('/add/schedule/', methods=['POST'])
 @User.admin_required
@@ -184,15 +207,20 @@ def add_schedule():
     data = request.get_json()
 
     if 'movie_id' not in data or 'time' not in data:
-        return jsonify({'error': 'movie_id and time must be provided'}), 400
+        return jsonify({
+            'error': 'movie_id and time must be provided'
+            }), 400
 
     existing_schedule = Schedule.query.filter_by(movie_id=data['movie_id'], time=data['time']).first()
     if existing_schedule:
-        return jsonify({'error': 'The schedule already exists'}), 409
+        return jsonify({
+            'error': 'The schedule already exists'
+            }), 400
 
     new_schedule = Schedule(
         movie_id=data['movie_id'],
-        time=data['time']
+        time=data['time'],
+        theater_id=data['theater_id']
     )
 
     db.session.add(new_schedule)
@@ -204,6 +232,7 @@ def add_schedule():
         'name': new_schedule.movie.name,
         'ticket_price': new_schedule.movie.ticket_price,
         'time': new_schedule.time.strftime('%H:%M'),
+        'theater_id': new_schedule.theater_id,
         'remaining_days': f'{new_schedule.movie.active_movie()} days' 
     }), 201
 
@@ -218,15 +247,21 @@ def update_schedule():
         })
     sch = Schedule.query.get(update_id)
     if not sch:
-        return jsonify({'error': 'Schedule not found'}), 404
+        return jsonify({
+            'error': 'Schedule not found'
+            }), 404
     if 'id' in data:
         sch.id = data['id']
     if 'time' in data:
         sch.time = data['time']
+    if 'theater_id' in data:
+        sch.theater_id = data['theater_id']
+
     db.session.commit()
     return jsonify({
         'id': sch.id,
         'movie_id': sch.movie_id,
+        'theater_id': sch.theater_id,
         'name': sch.movie.name,
         'time': sch.time.strftime('%H:%M'),
         'remaining_days': f'{sch.movie.active_movie()} days' 
@@ -237,35 +272,40 @@ def update_schedule():
 def list_movie(current_user):
     play_date_str = request.form.get('play_date')
     if not play_date_str:
-        return jsonify({'error': 'play_date parameter is required'}), 400
+        return jsonify({
+            'error': 'play_date parameter is required'
+            }), 400
     try:
         play_date = datetime.strptime(play_date_str, '%Y-%m-%d').date() 
     except ValueError:
-        return jsonify({'error': 'Invalid date format'}), 400
+        return jsonify({
+            'error': 'Invalid date format'
+            }), 400
 
     max_launching_date = play_date - timedelta(days=7)
     active_movies = Movie.query.filter(Movie.launching >= max_launching_date).all()
 
-    movie_info = [
-        {
-            'id': movie.id,
-            'name': movie.name,
-            'category': movie.info_category.name,
-            'ticket_price': f'Rp {movie.ticket_price}',
-            'schedules': [schedule.time.strftime('%H:%M') for schedule in movie.schedules]  # Mengambil waktu dari setiap jadwal
-        }
-        for movie in active_movies
-    ]
-
+    movie_info = [{
+        'id': movie.id,
+        'name': movie.name,
+        'category': movie.info_category.name,
+        'ticket_price': f'Rp {movie.ticket_price}',
+        'schedules': [{
+            'time': schedule.time.strftime('%H:%M'),
+            'theater': schedule.info_theater.room if schedule.info_theater else None
+        } for schedule in movie.schedules]
+    } for movie in active_movies]
     return jsonify(movie_info), 200
-
 
 @app.route('/search/', methods=['GET'])
 @User.admin_or_user_required
 def search_movie(current_user):
     query = request.args.get('query')
     if not query:
-        return jsonify({'error': 'Query parameter is required'}), 400
+        return jsonify({
+            'error': 'Query parameter is required'
+            }), 400
+    
     name_results = Movie.query.filter(Movie.name.ilike(f"%{query}%")).all()
     category_results = Movie.query.join(Category).filter(Category.name.ilike(f"%{query}%")).all()
     search_results = name_results + category_results
@@ -286,16 +326,22 @@ def search_movie(current_user):
 def topup(current_user):
     data = request.get_json()
     if 'amount' not in data:
-        return jsonify({'error': 'amount must be provided'}), 400
+        return jsonify({
+            'error': 'amount must be provided'
+            }), 400
 
     try:
         amount = int(data['amount'])
     except ValueError:
-        return jsonify({'error': 'Amount must be an integer'}), 400
+        return jsonify({
+            'error': 'Amount must be an integer'
+            }), 400
 
     user = User.query.filter_by(username=current_user.username).first()
     if not user:
-        return jsonify({'error': 'User not found or does not match'}), 404
+        return jsonify({
+            'error': 'User not found or does not match'
+            }), 404
 
     new_topup = Topup(
         user_id=user.id,
@@ -305,18 +351,24 @@ def topup(current_user):
     db.session.add(new_topup)
     db.session.commit()
 
-    return jsonify({'message': 'Top-up request submitted successfully'}), 200
+    return jsonify({
+        'message': 'Top-up request submitted successfully'
+        }), 200
 
 @app.route('/confirm/topup/', methods=['PUT'])
 @User.admin_required
 def confirm_topup():
     topup_id = request.get_json('id')
     if not topup_id:
-        return jsonify({'error': 'Top-up request ID not provided'}), 400
+        return jsonify({
+            'error': 'Top-up request ID not provided'
+            }), 400
 
     topup = Topup.query.get(topup_id)
     if not topup:
-        return jsonify({'error': 'Top-up request not found'}), 404
+        return jsonify({
+            'error': 'Top-up request not found'
+            }), 404
 
     if not topup.is_confirmed:
         topup.is_confirmed = True
@@ -326,25 +378,47 @@ def confirm_topup():
         user.balance += topup.amount
         db.session.commit()
 
-        return jsonify({'message': 'Top-up request confirmed successfully'}), 200
+        return jsonify({
+            'message': 'Top-up request confirmed successfully'
+            }), 200
     else:
-        return jsonify({'error': 'Top-up request has already been confirmed'}), 400
+        return jsonify({
+            'error': 'Top-up request has already been confirmed'
+            }), 400
+
+from datetime import datetime
 
 @app.route('/buy/ticket', methods=['POST'])
 @User.admin_or_user_required
 def buy(current_user):
     data = request.get_json()
-    schedule = Schedule.query.get(data['schedule_id'])
+    schedule_id = data.get('schedule_id')
+    transaction_date = data.get('date')
+
+    if not schedule_id or not transaction_date:
+        return jsonify({'error': 'Both schedule_id and date must be provided'}), 400
+
+    schedule = Schedule.query.get(schedule_id)
     if not schedule:
         return jsonify({'error': 'Schedule not found'}), 404
+
+    transaction_date = datetime.strptime(transaction_date, '%Y-%m-%d').date()
+    if transaction_date < datetime.now().date():
+        return jsonify({'error': 'Transaction date cannot be in the past'}), 400
+
+    available_seat_count = schedule.info_theater.total_seat - Transaction.query.filter_by(schedule_id=schedule_id).filter_by(date=transaction_date).count()
+    if available_seat_count <= 0:
+        return jsonify({'error': 'No available seats for this schedule on the given date'}), 400
+
     ticket_price = schedule.movie.ticket_price
     if current_user.balance < ticket_price:
         return jsonify({'error': 'Insufficient balance'}), 400
-
+    
     current_user.balance -= ticket_price
     new_transaction = Transaction(
         user_id=current_user.id,
-        schedule_id=data['schedule_id']
+        schedule_id=schedule_id,
+        date=transaction_date
     )
 
     db.session.add(new_transaction)
@@ -362,15 +436,16 @@ def most_popular_movie(current_user):
         ticket_count = Transaction.query.join(Schedule).filter(Schedule.movie_id == movie.id).count()
         movie_ticket_counts[movie.id] = ticket_count
 
-    most_popular_movie_id = max(movie_ticket_counts, key=movie_ticket_counts.get)
-    most_popular_movie = Movie.query.get(most_popular_movie_id)
+    sorted_movies = sorted(movie_ticket_counts.items())
+
+    top_5_movies = sorted_movies[:5]
 
     result = {
-        'most_popular_movie': {
-            'id': most_popular_movie.id if most_popular_movie else None,
-            'name': most_popular_movie.name if most_popular_movie else None,
-            'ticket_count': movie_ticket_counts.get(most_popular_movie_id, 0)
-        }
+        'top_movies': [{
+            'id': movie_id,
+            'name': Movie.query.get(movie_id).name,
+            'ticket_count': ticket_count
+        } for movie_id, ticket_count in top_5_movies]
     }
 
     return jsonify(result), 200
