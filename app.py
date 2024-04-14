@@ -396,23 +396,29 @@ def buy(current_user):
     transaction_date = data.get('date')
 
     if not schedule_id or not transaction_date:
-        return jsonify({'error': 'Both schedule_id and date must be provided'}), 400
+        return jsonify({
+            'error': 'schedule_id and date must be input'
+            }), 400
 
     schedule = Schedule.query.get(schedule_id)
     if not schedule:
-        return jsonify({'error': 'Schedule not found'}), 404
+        return jsonify({
+            'error': 'Schedule not found'
+            }), 404
 
     transaction_date = datetime.strptime(transaction_date, '%Y-%m-%d').date()
-    if transaction_date < datetime.now().date():
-        return jsonify({'error': 'Transaction date cannot be in the past'}), 400
 
     available_seat_count = schedule.info_theater.total_seat - Transaction.query.filter_by(schedule_id=schedule_id).filter_by(date=transaction_date).count()
     if available_seat_count <= 0:
-        return jsonify({'error': 'No available seats for this schedule on the given date'}), 400
+        return jsonify({
+            'error': 'No available seats for this schedule on the given date'
+            }), 400
 
     ticket_price = schedule.movie.ticket_price
     if current_user.balance < ticket_price:
-        return jsonify({'error': 'Insufficient balance'}), 400
+        return jsonify({
+            'error': 'Insufficient balance'
+            }), 400
     
     current_user.balance -= ticket_price
     new_transaction = Transaction(
@@ -424,7 +430,9 @@ def buy(current_user):
     db.session.add(new_transaction)
     db.session.commit()
 
-    return jsonify({'message': 'Ticket purchased successfully'}), 200
+    return jsonify({
+        'message': 'Ticket purchased successfully'
+        }), 200
 
 
 @app.route('/topmovie', methods=['GET'])
@@ -436,20 +444,19 @@ def most_popular_movie(current_user):
         ticket_count = Transaction.query.join(Schedule).filter(Schedule.movie_id == movie.id).count()
         movie_ticket_counts[movie.id] = ticket_count
 
-    sorted_movies = sorted(movie_ticket_counts.items())
+    sorted_movies = sorted(movie_ticket_counts.items(),key=lambda x: x[1], reverse=True)
 
     top_5_movies = sorted_movies[:5]
 
     result = {
         'top_movies': [{
             'id': movie_id,
-            'name': Movie.query.get(movie_id).name,
+            'name': db.session.get(Movie,movie_id).name,
             'ticket_count': ticket_count
         } for movie_id, ticket_count in top_5_movies]
     }
 
     return jsonify(result), 200
-
 
 
 
