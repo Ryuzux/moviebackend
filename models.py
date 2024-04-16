@@ -83,6 +83,7 @@ class User(db.Model):
         return wrapper
 
     def admin_or_user_required(fn):
+        
         @wraps(fn)
         def wrapper(*args, **kwargs):
             username = request.authorization.username
@@ -96,4 +97,9 @@ class User(db.Model):
                 }), 401
         return wrapper
 
-
+@auth.verify_password
+def verify_password(username, password):
+    user = User.query.filter_by(username=username).first()
+    if user and user.password == password:
+        return True
+    return False
