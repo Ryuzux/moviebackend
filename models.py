@@ -1,9 +1,9 @@
 from flask import Flask,request,jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_httpauth import HTTPBasicAuth
 from functools import wraps
 from werkzeug.security import check_password_hash
+
 
 app = Flask(__name__)
 
@@ -12,7 +12,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost/mo
 
 db = SQLAlchemy(app)
 Migrate = Migrate(app, db)
-auth = HTTPBasicAuth()
+
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -90,12 +90,3 @@ class User(db.Model):
         
         return wrapper
 
-
-
-
-@auth.verify_password
-def verify_password(username, password):
-    user = User.query.filter_by(username=username).first()
-    if user and user.password == password:
-        return True
-    return False
