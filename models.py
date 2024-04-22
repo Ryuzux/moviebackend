@@ -4,7 +4,6 @@ from flask_migrate import Migrate
 from functools import wraps
 from werkzeug.security import check_password_hash
 
-
 app = Flask(__name__)
 
 app.config['SECRET_KEY']= 'secret'
@@ -12,7 +11,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:1234@localhost/mo
 
 db = SQLAlchemy(app)
 Migrate = Migrate(app, db)
-
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
