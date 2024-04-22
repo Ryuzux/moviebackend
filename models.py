@@ -2,8 +2,8 @@ from flask import Flask,request,jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_httpauth import HTTPBasicAuth
-from datetime import datetime
 from functools import wraps
+from werkzeug.security import check_password_hash
 
 app = Flask(__name__)
 
@@ -21,14 +21,6 @@ class Movie(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'))
     ticket_price = db.Column(db.Integer, nullable=False)
     schedules = db.relationship('Schedule', back_populates='movie')
-
-    def active_movie(self):
-        difference = datetime.now().date() - self.launching
-        remaining_days = 7 - difference.days
-        if remaining_days >= 0:
-            return remaining_days
-        else:
-            return 0
 
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -64,7 +56,7 @@ class Transaction(db.Model):
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, index=True, nullable=False)
     username = db.Column(db.String(20), unique=True, nullable=False)
-    password = db.Column(db.String(20), nullable=False)
+    password = db.Column(db.String(200), nullable=False)
     balance = db.Column(db.Integer, default=0)
     role = db.Column(db.String(20), default='user')
     transactions = db.relationship('Transaction', backref='info_user', lazy='dynamic')
@@ -83,19 +75,23 @@ class User(db.Model):
         return wrapper
 
     def admin_or_user_required(fn):
-        
         @wraps(fn)
         def wrapper(*args, **kwargs):
             username = request.authorization.username
+            password = request.authorization.password
+            
             current_user = User.query.filter_by(username=username).first()
-            if current_user:
-                kwargs['current_user'] = current_user
-                if current_user.role == "admin" or current_user.role == "user":
-                    return fn(*args, **kwargs)
-            return jsonify({
-                "error": "Unauthorized"
-                }), 401
+
+            if not current_user or not check_password_hash(current_user.password, password):
+                return jsonify({"error": "Unauthorized"}), 401
+            
+            kwargs["current_user"] = current_user
+            return fn(*args, **kwargs)
+        
         return wrapper
+
+
+
 
 @auth.verify_password
 def verify_password(username, password):
