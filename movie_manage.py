@@ -208,7 +208,7 @@ def search_movie(current_user):
         return jsonify({
             'error': 'Query parameter is required'
             }), 400
-    
+
     name_results = Movie.query.filter(Movie.name.ilike(f"%{query}%")).all()
     category_results = Movie.query.join(Category).filter(Category.name.ilike(f"%{query}%")).all()
     search_results = name_results + category_results
