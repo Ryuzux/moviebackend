@@ -30,7 +30,6 @@ def most_popular_movie(current_user):
         "movie": row[1],
         "ticket_count": row[2]
         }for row in result]
-        
         return jsonify(top_movies), 200 
 
 
